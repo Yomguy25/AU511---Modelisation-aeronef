@@ -287,8 +287,8 @@ class dragGUI:
           self.l5.set_text('OS='+'{:.3f}'.format(OS)+' %'+'   tr5%='+'{:.3f}'.format(Ts)+' s'\
                           +'   Gain='+'{:.5f}'.format(self.gainSign*self.k))
           yy=interp1d(t,y)
-          self.l21.set_xdata(Ts)
-          self.l21.set_ydata(yy(Ts)) 
+          self.l21.set_xdata([Ts])
+          self.l21.set_ydata([yy(Ts)]) 
           self.l23.set_xdata([t[0],t[-1]])
           self.l23.set_ydata([0.95*y[-1],0.95*y[-1]])
           self.l24.set_xdata([t[0],t[-1]])
