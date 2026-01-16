@@ -561,7 +561,256 @@ print("Damping ratios:")
 print(zeta_z)
 
 
+#%% partie saturation 
+
+# %% BUILD STATE SPACE: gamma_c_sat -> alpha
+
+# 1. Define the Output Matrix for alpha
+# The state vector is x = [V, gamma, alpha, q]
+# alpha is the 3rd state (index 2)
+C_alpha_cl = np.array([[0., 0., 1., 0.]]) # pour avoir alpha ( 3 eme position )
+D_alpha_cl = np.array([[0.]]) # reste  a 0 
+
+# 2. Construct the State Space System
+
+sys_gamma_alpha = control.ss(A_gamma, B_gamma, C_alpha_cl, D_alpha_cl)
+
+print("Closed Loop State Space: gamma_c_sat -> alpha")
+
+print(sys_gamma_alpha)
+
+
+t_alpha = np.linspace(0, 10, 1000)
+T_alpha, y_alpha = control.step_response(sys_gamma_alpha, t_alpha)  # par défault gammac est a 1 quand on prend un step
+# on peut multiplier par la valeur final voulu comme cest un state space donc on multiplie B et D 
+plt.figure()
+plt.plot(T_alpha, y_alpha, 'b', linewidth=2)
+plt.grid(True)
+plt.title(r'Response of $\alpha$ to a step in $\gamma_{c_{sat}}$')
+plt.xlabel('Time (s)')
+plt.ylabel(r'$\alpha$ (rad)')
+plt.show()
+#%%
+
+# calcul de alpha max
+
+alphamax= 3*g*(alpha_eq-alpha0)+alpha_eq
+print (alphamax)
+
+#%%
+
+
+def f(gamma_c):
+    sys_gamma_alpha = control.ss(A_gamma, B_gamma*gamma_c, C_alpha_cl, D_alpha_cl*gamma_c)
+    t_alpha = np.linspace(0, 10, 1000)
+    T_alpha, y_alpha = control.step_response(sys_gamma_alpha, t_alpha)
+    
+    return max(y_alpha) - alphamax
+
+
+diff = f(0.28)
+print (diff) #
+
+
+#%% algo dichotomie 
+
+def dicho(a,b, eps=1e-6 ):
+    gamma_c=0
+    it=0
+    while (b-a)>eps:
+        gamma_c=(a+b)/2
+        print()
+        if f(a)*f(gamma_c)<=0:
+            b=gamma_c
+        else :
+            a=gamma_c
+        it+=1
+    return gamma_c ,it
+
+print (dicho(0,np.pi/2))
+
+gammacmax,_=dicho(0,np.pi/2)
+
+
+#%%
 
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#%%
+#%% 9) FLIGHT MANAGEMENT - MULTI-PHASE SIMULATION
+
+print("\n" + "="*70)
+print("FLIGHT MANAGEMENT SIMULATION")
+print("="*70)
+
+# --- 1. Préparation des systèmes ---
+
+# Système pour le maintien de Pente (Gamma Hold)
+# On utilise le modèle 6 états (V, gamma, alpha, q, theta, z) défini dans la section 8
+# Entrée : gamma_c, Sortie : états complets
+sys_phase_gamma = control.ss(A_gamma6, B_gamma6, np.eye(6), np.zeros((6,1)))
+
+# Système pour le maintien d'Altitude (Z Hold)
+# On utilise le système bouclé complet défini section 8
+# Il a 7 états : 6 états avion + 1 état capteur (z_mesuré)
+sys_phase_z = sys_z_cl_ss 
+
+
+# --- 2. Définition des paramètres de vol ---
+
+# Phase 1: Montée (Ascent)
+gamma_climb_deg = gammacmax
+gamma_climb = gamma_climb_deg * (np.pi/180)
+duration_ascent = 40.0 # secondes
+
+# Phase 2: Croisière (Cruise)
+duration_cruise = 100.0 # secondes (demandé environ 100s)
+
+# Phase 3: Descente (Descent)
+gamma_desc_deg = -gammacmax
+gamma_desc = gamma_desc_deg * (np.pi/180)
+duration_descent = 40.0
+
+# Phase 4: Flare / Palier
+duration_flare = 30.0
+z_ground = 0 # ou altitude finale souhaitée
+
+
+# --- 3. Simulation Séquentielle ---
+
+# --- PHASE 1 : ASCENT (Gamma Control) ---
+t1 = np.linspace(0, duration_ascent, 400)
+u1 = np.full_like(t1, gamma_climb) # Consigne constante
+
+# Condition initiale : tout à 0 (point d'équilibre)
+x0_1 = np.zeros(6) 
+
+resp1 = control.forced_response(sys_phase_gamma, T=t1, U=u1, X0=x0_1)
+x_end_1 = resp1.states[:, -1] # On récupère le vecteur d'état final (6 valeurs)
+
+
+# --- PHASE 2 : CRUISE (Z Control) ---
+t2 = np.linspace(0, duration_cruise, 1000)
+z_target_cruise = x_end_1[5] # On vise l'altitude atteinte à la fin de la montée
+u2 = np.full_like(t2, z_target_cruise)
+
+# Transition X0 : Le système Z a 7 états. 
+# On prend les 6 états de la fin de phase 1 + on initialise le capteur
+# On suppose que le capteur lit l'altitude réelle instantanément : x_sensor = z
+x0_2 = np.append(x_end_1, x_end_1[5]) 
+
+resp2 = control.forced_response(sys_phase_z, T=t2, U=u2, X0=x0_2)
+x_end_2 = resp2.states[:, -1] # On récupère le vecteur d'état final (7 valeurs)
+
+
+# --- PHASE 3 : DESCENT (Gamma Control) ---
+t3 = np.linspace(0, duration_descent, 400)
+u3 = np.full_like(t3, gamma_desc)
+
+# Transition X0 : Le système Gamma a 6 états.
+# On prend les 6 premiers états de la phase 2 (on ignore l'état du capteur)
+x0_3 = x_end_2[0:6]
+
+resp3 = control.forced_response(sys_phase_gamma, T=t3, U=u3, X0=x0_3)
+x_end_3 = resp3.states[:, -1]
+
+
+# --- PHASE 4 : FLARE / LEVEL (Z Control) ---
+t4 = np.linspace(0, duration_flare, 300)
+u4 = np.full_like(t4, x_end_3[5] - 20) # Exemple : on demande un palier un peu plus bas ou au sol
+
+# Transition X0 : Retour vers 7 états
+x0_4 = np.append(x_end_3, x_end_3[5])
+
+resp4 = control.forced_response(sys_phase_z, T=t4, U=u4, X0=x0_4)
+
+
+# --- 4. Concaténation et Affichage ---
+
+# Création des vecteurs globaux
+# Il faut décaler le temps pour qu'il soit continu
+time_all = np.concatenate([
+    resp1.time, 
+    resp2.time + resp1.time[-1], 
+    resp3.time + resp2.time[-1] + resp1.time[-1],
+    resp4.time + resp3.time[-1] + resp2.time[-1] + resp1.time[-1]
+])
+
+# Extraction des variables d'intérêt
+# Attention : resp2 et resp4 ont 7 états, resp1 et resp3 ont 6 états.
+# On ne concatène que les états physiques communs (indices 0 à 5)
+states_1 = resp1.states
+states_2 = resp2.states[0:6, :] # On ignore l'état du capteur
+states_3 = resp3.states
+states_4 = resp4.states[0:6, :]
+
+states_all = np.concatenate([states_1, states_2, states_3, states_4], axis=1)
+
+# Récupération de l'altitude (index 5) et de la pente (index 1)
+z_all = states_all[5, :]
+gamma_all = states_all[1, :]
+theta_all = states_all[4, :]
+
+# PLOT GLOBAL
+plt.figure(figsize=(10, 8))
+
+# Courbe Altitude
+plt.subplot(3, 1, 1)
+plt.plot(time_all, z_all, 'b', lw=2)
+plt.ylabel('Altitude z (m)')
+plt.title('Flight Management Simulation')
+plt.grid(True)
+# Ajout de zones colorées pour les phases
+plt.axvspan(0, t1[-1], color='green', alpha=0.1, label='Ascent (Gamma)')
+plt.axvspan(t1[-1], t1[-1]+t2[-1], color='blue', alpha=0.1, label='Cruise (Z)')
+plt.axvspan(t1[-1]+t2[-1], t1[-1]+t2[-1]+t3[-1], color='orange', alpha=0.1, label='Descent (Gamma)')
+plt.legend()
+
+# Courbe Pente (Gamma)
+plt.subplot(3, 1, 2)
+plt.plot(time_all, gamma_all * 180/np.pi, 'r', lw=2)
+plt.ylabel('Gamma (deg)')
+plt.grid(True)
+
+# Courbe Theta (Assiette)
+plt.subplot(3, 1, 3)
+plt.plot(time_all, theta_all * 180/np.pi, 'k', lw=2)
+plt.ylabel('Theta (deg)')
+plt.xlabel('Time (s)')
+plt.grid(True)
+
+plt.tight_layout()
+plt.show()
