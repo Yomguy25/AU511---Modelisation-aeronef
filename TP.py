@@ -309,7 +309,67 @@ print("Alpha Settling time 5%% = %f s" % Tsa)
 print("q Settling time 5%% = %f s" % Tsq)
 
 savefig("stepalphaq.pdf")
+#%%
 
+########################## phugoid mode
+
+Ap = Ar[0:2, 0:2]
+Bp = Br[0:2, 0:1]
+
+mdamp(Ap)
+
+Cpv = np.matrix([[1, 0]])
+Cpg = np.matrix([[0, 1]])
+Dp  = np.matrix([[0]])
+
+TvDm_ss = control.ss(Ap, Bp, Cpv, Dp)
+print("Transfer function V / delta m =")
+TvDm_tf = control.tf(TvDm_ss)
+print(TvDm_tf)
+print("Static gain of V / delta m = %f" % (control.dcgain(TvDm_tf)))
+
+TgDm_ss = control.ss(Ap, Bp, Cpg, Dp)
+print("Transfer function gamma / delta m =")
+TgDm_tf = control.ss2tf(TgDm_ss)
+print(TgDm_tf)
+print("Static gain of gamma / delta m = %f" % (dcgain(TgDm_tf)))
+figure(2)
+
+Yv, Tv = control.matlab.step(TvDm_tf, arange(0, 21000, 0.1))
+Yg, Tg = control.matlab.step(TgDm_tf, arange(0, 21000, 0.1))
+
+plot(Tv, Yv, 'b', Tg, Yg, 'r', lw=2)
+
+plot([0, Tv[-1]], [Yv[-1], Yv[-1]], 'k--', lw=1)
+plot([0, Tv[-1]], [1.05 * Yv[-1], 1.05 * Yv[-1]], 'k--', lw=1)
+plot([0, Tv[-1]], [0.95 * Yv[-1], 0.95 * Yv[-1]], 'k--', lw=1)
+
+plot([0, Tg[-1]], [Yg[-1], Yg[-1]], 'k--', lw=1)
+plot([0, Tg[-1]], [1.05 * Yg[-1], 1.05 * Yg[-1]], 'k--', lw=1)
+plot([0, Tg[-1]], [0.95 * Yg[-1], 0.95 * Yg[-1]], 'k--', lw=1)
+
+minorticks_on()
+grid(True, which='both')
+
+title(r"Step response $V/\delta m$ et $\gamma/\delta m$")
+legend((r'$V/\delta m$', r'$\gamma/\delta m$'))
+xlabel('Time (s)')
+ylabel(r'$V$ (rad) & $\gamma$ (rad/s)')
+
+Osv, Trv, Tsv = step_info(Tv, Yv)
+Osg, Trg, Tsg = step_info(Tg, Yg)
+
+yyv = interp1d(Tv, Yv)
+plot(Tsv, yyv(Tsv), 'bs')
+text(Tsv, yyv(Tsv) - 0.2, Tsv)
+
+yyg = interp1d(Tg, Yg)
+plot(Tsg, yyg(Tsg), 'rs')
+text(Tsg, yyg(Tsg) - 0.2, Tsg)
+
+print('V Settling time to within 5%% = %f s' % Tsv)
+print('gamma Settling time to within 5%% = %f s' % Tsg)
+ 
 #%%
 # question 1 page 26
 
@@ -325,6 +385,7 @@ xi_desired = 0.65
 TqDm_tf = control.ss2tf(control.ss(Ai, Bi, Cq, 0))
 # Kr = sisotool(TqDm_tf, kmin=0.0001, kmax=40.0, kdefault=0.010, xispec=xi_desired)
 Kr = -0.15
+#%%
 # ==========================================
 # CLOSED LOOP STATE SPACE REPRESENTATION
 # ==========================================
@@ -342,9 +403,24 @@ Ck_2x2 = np.eye(2)  # All states as output
 # D_k = 0 (no direct feedthrough)
 Dk_2x2 = np.zeros((2, 1))
 
+print("Ak =")
+print(Ak)
+print("\nBk =")
+print(Bk)
+print("\nCk =")
+print(Ck_2x2)
+print("\nDk =")
+print(Dk_2x2)
+
+#%%
 # Create closed-loop state space system (2x2)
 sys_cl = control.ss(np.array(Ak), np.array(Bk), Ck_2x2, Dk_2x2)
 
+TF_cl = control.ss2tf(sys_cl)
+print("Closed-loop transfer function (q / q_c):")
+print(TF_cl)
+
+#%%
 print("\nClosed-loop system characteristics (2x2):")
 wn_cl, zeta_cl, pole_cl = control.matlab.damp(sys_cl)
 print(f"Natural frequencies: {wn_cl}")
@@ -355,6 +431,7 @@ print("\nClosed-loop pole analysis:")
 print("Poles of the closed-loop system:")
 mdamp(np.array(Ak))
 
+#%%
 # Test the closed-loop system
 print("\n" + "="*70)
 print("Testing closed-loop step response")
@@ -376,6 +453,17 @@ print(f"Closed-loop q response (with Kr = {Kr:.6f}):")
 print(f"  Overshoot (OS):        {OS_cl:.3f} %")
 print(f"  Rise time (Tr):        {Tr_cl:.3f} s")
 print(f"  Settling time (Ts 5%): {Ts_cl:.3f} s")
+
+# Plot step response of q
+plt.figure(figsize=(8,4))
+plt.plot(T_cl, Y_cl, lw=2)
+plt.grid(True)
+plt.xlabel("Time (s)")
+plt.ylabel("q (rad/s)")
+plt.title("Closed-loop step response (q output)")
+plt.tight_layout()
+plt.show()
+
  
 # %% 6) Washout filter and comparison
 
@@ -442,6 +530,7 @@ sys_gamma_plant = control.ss(A_q, B_q, C_gamma4, 0)
 #Kgamma = sisotool(sys_gamma_plant, kmin=1e-4, kmax=50, kdefault=1.0, xispec=0.7)
 Kgamma = 13.93   # obtenu avec sisotool et specifications
 
+#%%
 # --- Closed-loop with gamma feedback (γc -> γ) ---
 
 # Matrices d'état du système avec boucle q déjà fermée : A_q, B_q
@@ -454,10 +543,14 @@ D_gamma = np.array([[0.]])                  # D_cl
 
 # 1) Représentation d'état fermée
 sys_gamma_cl = control.ss(A_gamma, B_gamma, C_gamma, D_gamma)
+print(sys_gamma_cl)
 
+#%%
 # 2) Fonction de transfert fermée (γc -> γ)
 T_gamma_cl = control.ss2tf(sys_gamma_cl)
+print(T_gamma_cl)
 
+#%%
 # 3) Pôles, amortissement, pulsations propres
 wn_g, zeta_g, poles_g = control.damp(sys_gamma_cl)
 
@@ -467,7 +560,7 @@ print("Damping ratios:")
 print(zeta_g)
 print("Natural frequencies (rad/s):")
 print(wn_g)
-
+#%%
 # 4) Réponse indicielle γc → γ
 t = np.linspace(0, 15, 1000)
 _, y_gamma = control.step_response(sys_gamma_cl, t)
@@ -519,6 +612,7 @@ Gz_for_siso = control.series(Gz, H_alt)
 Kz = sisotool(Gz_for_siso, kmin=1e-4, kmax=50.0, kdefault=1.0, xispec=0.7)
 Kz = 0.00066   # <-- mets ici la valeur lue dans sisotool (D1<=5%, ξ>=0.5, Ts min)
 
+#%%
 # --- 3) Boucle z fermée : z_c -> z ------------------------
 # γc = Kz (z_c - z_mesuré), z_mesuré = H_alt(z)
 # => Tz(s) = Kz Gz(s) / (1 + Kz Gz(s) H_alt(s))
@@ -533,9 +627,25 @@ B_z = np.array(sys_z_cl_ss.B)
 C_z = np.array(sys_z_cl_ss.C)
 D_z = np.array(sys_z_cl_ss.D)
 
+print(sys_z_cl)
+#%%
+TF_z_cl = control.ss2tf(sys_z_cl)
+print(TF_z_cl)
+#%%
 # --- 4) Pôles, amortissement, pulsations propres ----------
 wn_z, zeta_z, poles_z = control.damp(sys_z_cl_ss)
 
+print("Closed-loop poles (altitude loop):")
+print(poles_z)
+
+print("\nDamping ratios:")
+print(zeta_z)
+
+print("\nNatural frequencies (rad/s):")
+print(wn_z)
+
+
+#%%
 # --- 5) Réponse indicielle z_c -> z -----------------------
 t = np.linspace(0, 80, 2000)
 t_step, z_resp = control.step_response(sys_z_cl_ss, t)
@@ -631,45 +741,6 @@ print (dicho(0,np.pi/2))
 
 gammacmax,_=dicho(0,np.pi/2)
 
-
-#%%
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#%%
 #%% 9) FLIGHT MANAGEMENT - MULTI-PHASE SIMULATION
 
 print("\n" + "="*70)
@@ -798,19 +869,88 @@ plt.axvspan(0, t1[-1], color='green', alpha=0.1, label='Ascent (Gamma)')
 plt.axvspan(t1[-1], t1[-1]+t2[-1], color='blue', alpha=0.1, label='Cruise (Z)')
 plt.axvspan(t1[-1]+t2[-1], t1[-1]+t2[-1]+t3[-1], color='orange', alpha=0.1, label='Descent (Gamma)')
 plt.legend()
-
 # Courbe Pente (Gamma)
 plt.subplot(3, 1, 2)
 plt.plot(time_all, gamma_all * 180/np.pi, 'r', lw=2)
 plt.ylabel('Gamma (deg)')
 plt.grid(True)
-
 # Courbe Theta (Assiette)
 plt.subplot(3, 1, 3)
 plt.plot(time_all, theta_all * 180/np.pi, 'k', lw=2)
 plt.ylabel('Theta (deg)')
 plt.xlabel('Time (s)')
 plt.grid(True)
-
 plt.tight_layout()
 plt.show()
+
+# %% --- Q28 : PHASE 4 : FLARE with RAMP (Z Control) ---
+
+t4 = np.linspace(0, duration_flare, 300)
+
+z_start = x_end_3[5]
+z_final = z_ground
+
+u4 = np.linspace(z_start, z_final, t4.size)
+x0_4 = np.append(x_end_3, x_end_3[5])
+
+resp4 = control.forced_response(sys_phase_z, T=t4, U=u4, X0=x0_4)
+
+time_all = np.concatenate([
+    resp1.time,
+    resp2.time + resp1.time[-1],
+    resp3.time + resp2.time[-1] + resp1.time[-1],
+    resp4.time + resp3.time[-1] + resp2.time[-1] + resp1.time[-1]
+])
+
+states_all = np.concatenate(
+    [resp1.states, resp2.states[0:6, :], resp3.states, resp4.states[0:6, :]],
+    axis=1
+)
+
+z_all     = states_all[5, :]
+gamma_all = states_all[1, :] * 180 / np.pi
+theta_all = states_all[4, :] * 180 / np.pi
+
+plt.figure(figsize=(10, 8))
+plt.subplot(3, 1, 1); plt.plot(time_all, z_all, 'b', lw=2); plt.ylabel('Altitude z (m)')
+plt.title('Flight Management Simulation (Flare: Ramp)'); plt.grid(True)
+plt.subplot(3, 1, 2); plt.plot(time_all, gamma_all, 'r', lw=2); plt.ylabel('Gamma (deg)'); plt.grid(True)
+plt.subplot(3, 1, 3); plt.plot(time_all, theta_all, 'k', lw=2); plt.ylabel('Theta (deg)'); plt.xlabel('Time (s)'); plt.grid(True)
+plt.tight_layout(); plt.show()
+
+
+# %% --- Q29 : PHASE 4 : FLARE with EXPONENTIAL LAW (Z Control) ---
+
+t4 = np.linspace(0, duration_flare, 300)
+
+z_start = x_end_3[5]
+z_final = z_ground
+tau_flare = 8.0
+
+u4 = z_final + (z_start - z_final) * np.exp(-t4 / tau_flare)
+x0_4 = np.append(x_end_3, x_end_3[5])
+
+resp4 = control.forced_response(sys_phase_z, T=t4, U=u4, X0=x0_4)
+
+time_all = np.concatenate([
+    resp1.time,
+    resp2.time + resp1.time[-1],
+    resp3.time + resp2.time[-1] + resp1.time[-1],
+    resp4.time + resp3.time[-1] + resp2.time[-1] + resp1.time[-1]
+])
+
+states_all = np.concatenate(
+    [resp1.states, resp2.states[0:6, :], resp3.states, resp4.states[0:6, :]],
+    axis=1
+)
+
+z_all     = states_all[5, :]
+gamma_all = states_all[1, :] * 180 / np.pi
+theta_all = states_all[4, :] * 180 / np.pi
+
+plt.figure(figsize=(10, 8))
+plt.subplot(3, 1, 1); plt.plot(time_all, z_all, 'b', lw=2); plt.ylabel('Altitude z (m)')
+plt.title('Flight Management Simulation (Flare: Exponential)'); plt.grid(True)
+plt.subplot(3, 1, 2); plt.plot(time_all, gamma_all, 'r', lw=2); plt.ylabel('Gamma (deg)'); plt.grid(True)
+plt.subplot(3, 1, 3); plt.plot(time_all, theta_all, 'k', lw=2); plt.ylabel('Theta (deg)'); plt.xlabel('Time (s)'); plt.grid(True)
+plt.tight_layout(); plt.show()
